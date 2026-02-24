@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nutripulse-v3';
+const CACHE_NAME = 'nutripulse-v4';
 const ASSETS = ['./index.html', './icon.svg', './icon-192.svg', './icon-512.svg'];
 
 self.addEventListener('install', e => {
