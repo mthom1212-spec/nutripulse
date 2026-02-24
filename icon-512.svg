@@ -1,47 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#059669;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#059669;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#0891b2;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="pulse" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.9" />
-      <stop offset="50%" style="stop-color:#ffffff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.9" />
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
     </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
   <!-- Background -->
   <rect width="512" height="512" rx="115" fill="url(#bg)"/>
 
-  <!-- Apple shape centered -->
-  <g transform="translate(256, 246)">
-    <!-- Leaf -->
-    <path d="M 15,-100 Q 30,-115 45,-108 Q 35,-97 28,-87 Z"
-          fill="#ffffff" opacity="0.9"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="155" fill="none" stroke="url(#ring)" stroke-width="9" opacity="0.4"/>
 
-    <!-- Apple body -->
-    <path d="M 0,-85 Q -8,-95 -15,-93
-             Q -75,-80 -90,-25
-             Q -95,30 -75,75
-             Q -45,105 0,113
-             Q 45,105 75,75
-             Q 95,30 90,-25
-             Q 75,-80 15,-93
-             Q 8,-95 0,-85 Z"
-          fill="#ffffff" opacity="0.95"/>
+  <!-- Inner circle background -->
+  <circle cx="256" cy="256" r="128" fill="rgba(255,255,255,0.15)"/>
 
-    <!-- Pulse line -->
-    <path d="M -105,15 L -60,15 L -45,-15 L -25,45 L 0,15 L 25,15 L 38,-25 L 53,50 L 75,15 L 105,15"
+  <!-- Pulse wave design -->
+  <g transform="translate(256, 256)" filter="url(#glow)">
+    <!-- Stylized pulse line -->
+    <path d="M -80,20 L -58,20 L -35,-42 L -12,58 L 12,20 L 35,20 L 58,-35 L 80,20"
           fill="none"
-          stroke="url(#pulse)"
-          stroke-width="7"
+          stroke="#ffffff"
+          stroke-width="10"
           stroke-linecap="round"
           stroke-linejoin="round"
-          opacity="0.85"/>
+          opacity="0.95"/>
+
+    <!-- Accent dots -->
+    <circle cx="-12" cy="58" r="7" fill="#ffffff" opacity="0.9"/>
+    <circle cx="58" cy="-35" r="7" fill="#ffffff" opacity="0.9"/>
   </g>
 
-  <!-- Subtle glow -->
-  <circle cx="256" cy="246" r="130" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.15"/>
+  <!-- Subtle bottom accent -->
+  <path d="M 170,400 Q 256,415 342,400"
+        fill="none"
+        stroke="rgba(255,255,255,0.2)"
+        stroke-width="6"
+        stroke-linecap="round"/>
 </svg>
