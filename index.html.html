@@ -8,7 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="NutriPulse">
 <meta name="theme-color" content="#10b981">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%2310b981'/><text x='90' y='125' font-size='110' text-anchor='middle' fill='white'>◉</text></svg>">
+<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="icon" type="image/svg+xml" href="./icon.svg">
 <title>NutriPulse</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -20,6 +21,7 @@ input[type="number"]{-moz-appearance:textfield}
 input::placeholder{color:#9d9dae;opacity:0.7}
 @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideDown{from{transform:translate(-50%,-100%);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 </style>
 </head>
 <body>
@@ -27,9 +29,6 @@ input::placeholder{color:#9d9dae;opacity:0.7}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script>
-// Register Service Worker
-if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}
-
 const{useState,useEffect,useCallback,useMemo,createElement:h,Fragment}=React;
 const e=h; // alias
 
@@ -40,7 +39,23 @@ const DB={
   del(k){try{localStorage.removeItem(k)}catch(e){}}
 };
 
-const SK={food:'np2-food',weight:'np2-weight',settings:'np2-settings',recent:'np2-recent'};
+// ─── Service Worker Update Detection ───
+let swRegistration=null;
+if('serviceWorker'in navigator){
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    swRegistration=reg;
+    reg.addEventListener('updatefound',()=>{
+      const newWorker=reg.installing;
+      newWorker.addEventListener('statechange',()=>{
+        if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+          window.dispatchEvent(new Event('swUpdate'));
+        }
+      });
+    });
+  }).catch(()=>{});
+}
+
+const SK={food:'np2-food',weight:'np2-weight',settings:'np2-settings',recent:'np2-recent',fast:'np2-fast',activeFast:'np2-activeFast'};
 
 // ─── Constants ───
 const CATS=[
@@ -62,14 +77,62 @@ const T={
   mono:"'JetBrains Mono',monospace",font:"'Outfit',sans-serif"
 };
 
-function today(){return new Date().toISOString().split('T')[0]}
-function ds(d){return d.toISOString().split('T')[0]}
+// Central Time helpers
+function getCentralDate(){
+  const date=new Date();
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+  const y=parts.find(p=>p.type==='year').value;
+  const m=parts.find(p=>p.type==='month').value;
+  const d=parts.find(p=>p.type==='day').value;
+  return`${y}-${m}-${d}`;
+}
+function getCentralHours(){
+  const date=new Date();
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'numeric',hour12:false}).formatToParts(date);
+  return parseInt(parts.find(p=>p.type==='hour').value);
+}
+function today(){return getCentralDate()}
+function ds(d){
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+  const y=parts.find(p=>p.type==='year').value;
+  const m=parts.find(p=>p.type==='month').value;
+  const dy=parts.find(p=>p.type==='day').value;
+  return`${y}-${m}-${dy}`;
+}
 function getLast(n){const r=[];for(let i=n-1;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);r.push(ds(d))}return r}
 function fmt(s){return new Date(s+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
-function defCat(){const h=new Date().getHours();if(h<10)return'breakfast';if(h<14)return'lunch';if(h<17)return'snacks';if(h<20)return'dinner';if(h<22)return'snacks';return'latenight'}
+function defCat(){const h=getCentralHours();if(h<10)return'breakfast';if(h<14)return'lunch';if(h<17)return'snacks';if(h<20)return'dinner';if(h<22)return'snacks';return'latenight'}
 function catC(id){return(CATS.find(c=>c.id===id)||{}).color||'#888'}
 function catL(id){return(CATS.find(c=>c.id===id)||{}).label||id}
 function rAvg(d,w=7){return d.map((_,i)=>{const s=Math.max(0,i-w+1);const sl=d.slice(s,i+1).filter(v=>v>0);return sl.length?sl.reduce((a,b)=>a+b,0)/sl.length:0})}
+
+// Fast tracker helpers
+function formatFastDuration(minutes){
+  const h=Math.floor(minutes/60);
+  const m=minutes%60;
+  if(h===0)return`${m}m`;
+  return m>0?`${h}h ${m}m`:`${h}h`;
+}
+function calculateFastDuration(startMs,endMs){
+  return((endMs-startMs)/1000/60/60).toFixed(1);
+}
+function getFastStats(fastLog){
+  const allFasts=Object.values(fastLog).flat();
+  if(!allFasts.length)return{avg:0,longest:0,total:0,streak:0};
+  const avg=(allFasts.reduce((s,f)=>s+parseFloat(f.duration),0)/allFasts.length).toFixed(1);
+  const longest=Math.max(...allFasts.map(f=>parseFloat(f.duration))).toFixed(1);
+  const dates=Object.keys(fastLog).sort().reverse();
+  let streak=0;
+  const cd=getCentralDate();
+  for(let i=0;i<dates.length;i++){
+    const d=new Date(cd+'T12:00:00');
+    d.setDate(d.getDate()-i);
+    const dk=ds(d);
+    if(fastLog[dk]&&fastLog[dk].length>0)streak++;
+    else break;
+  }
+  return{avg,longest,total:allFasts.length,streak};
+}
 
 // ─── Components ───
 function DonutChart({entries,goal,size=180}){
@@ -162,7 +225,7 @@ function CatBar({entries}){
   );
 }
 
-function genInsights(fLog,wLog,days,goal=2000){
+function genInsights(fLog,wLog,days,goal=2000,fastLog={}){
   const ins=[];
   const dc=days.map(d=>({d,t:(fLog[d]||[]).reduce((s,f)=>s+f.calories,0)}));
   const dw=days.map(d=>({d,w:wLog[d]||0}));
@@ -171,6 +234,31 @@ function genInsights(fLog,wLog,days,goal=2000){
 
   const l7=dc.slice(-7).filter(x=>x.t>0);
   if(l7.length>=3){const avg=Math.round(l7.reduce((s,x)=>s+x.t,0)/l7.length);ins.push({i:'📊',t:`Your 7-day calorie average is ${avg.toLocaleString()} cal/day.`,c:T.accent})}
+
+  // Fast insights
+  const stats=getFastStats(fastLog);
+  if(stats.total>=3&&parseFloat(stats.avg)>=12){
+    ins.push({i:'⏱',t:`Your average fast duration is ${stats.avg} hours across ${stats.total} fasts.`,c:T.accent});
+  }
+  if(parseFloat(stats.longest)>=16){
+    ins.push({i:'🏆',t:`Longest fast: ${stats.longest} hours! Great discipline.`,c:'#d97706'});
+  }
+  if(stats.streak>=3){
+    ins.push({i:'🔥',t:`${stats.streak}-day fasting streak! Consistency builds results.`,c:T.accent});
+  }
+  if(stats.total>=5&&nd>=7){
+    const fastDays=Object.keys(fastLog);
+    const withFast=dc.filter(x=>fastDays.includes(x.d)&&x.t>0);
+    const noFast=dc.filter(x=>!fastDays.includes(x.d)&&x.t>0);
+    if(withFast.length>=3&&noFast.length>=3){
+      const avgFast=Math.round(withFast.reduce((s,x)=>s+x.t,0)/withFast.length);
+      const avgNo=Math.round(noFast.reduce((s,x)=>s+x.t,0)/noFast.length);
+      const diff=avgNo-avgFast;
+      if(Math.abs(diff)>=100){
+        ins.push({i:'🔄',t:`On fasting days, you consume ${Math.abs(diff)} ${diff>0?'fewer':'more'} calories on average (${avgFast} vs ${avgNo}).`,c:diff>0?T.accent:T.warn});
+      }
+    }
+  }
 
   const ct={};days.forEach(d=>(fLog[d]||[]).forEach(x=>{ct[x.category]=(ct[x.category]||0)+x.calories}));
   const sr=Object.entries(ct).sort((a,b)=>b[1]-a[1]);
@@ -239,11 +327,36 @@ function App(){
   const[fCals,setFCals]=useState('');
   const[fCat,setFCat]=useState(defCat());
   const[wIn,setWIn]=useState('');
+  const[activeFast,setActiveFast]=useState(()=>DB.get(SK.activeFast)||null);
+  const[fastLog,setFastLog]=useState(()=>DB.get(SK.fast)||{});
+  const[fastTimer,setFastTimer]=useState(0);
+  const[showUpdate,setShowUpdate]=useState(false);
 
   useEffect(()=>{DB.set(SK.food,fLog)},[fLog]);
   useEffect(()=>{DB.set(SK.weight,wLog)},[wLog]);
   useEffect(()=>{DB.set(SK.settings,settings)},[settings]);
   useEffect(()=>{DB.set(SK.recent,recents)},[recents]);
+  useEffect(()=>{DB.set(SK.activeFast,activeFast)},[activeFast]);
+  useEffect(()=>{DB.set(SK.fast,fastLog)},[fastLog]);
+
+  // Fast timer update
+  useEffect(()=>{
+    if(!activeFast)return;
+    const updateTimer=()=>{
+      const elapsed=Date.now()-activeFast.startTime;
+      setFastTimer(Math.floor(elapsed/60000));
+    };
+    updateTimer();
+    const interval=setInterval(updateTimer,60000);
+    return()=>clearInterval(interval);
+  },[activeFast]);
+
+  // Service worker update detection
+  useEffect(()=>{
+    const handleUpdate=()=>setShowUpdate(true);
+    window.addEventListener('swUpdate',handleUpdate);
+    return()=>window.removeEventListener('swUpdate',handleUpdate);
+  },[]);
 
   const tEntries=fLog[selDate]||[];
   const tTotal=tEntries.reduce((s,x)=>s+x.calories,0);
@@ -262,7 +375,29 @@ function App(){
   const rmFood=id=>{setFLog(p=>({...p,[selDate]:(p[selDate]||[]).filter(f=>f.id!==id)}));setDelConfirm(null)};
   const addW=()=>{const w=parseFloat(wIn);if(!w||w<50||w>999)return;setWLog(p=>({...p,[selDate]:w}));setWIn('');setShowWeight(false)};
 
-  const insights=useMemo(()=>genInsights(fLog,wLog,l30,settings.dailyCalorieGoal),[fLog,wLog,settings.dailyCalorieGoal]);
+  const startFast=()=>{
+    const now=Date.now();
+    setActiveFast({startTime:now,startDate:getCentralDate()});
+    setFastTimer(0);
+  };
+  const stopFast=()=>{
+    if(!activeFast)return;
+    const now=Date.now();
+    const duration=calculateFastDuration(activeFast.startTime,now);
+    const entry={start:activeFast.startTime,end:now,duration};
+    setFastLog(p=>({...p,[activeFast.startDate]:[...(p[activeFast.startDate]||[]),entry]}));
+    setActiveFast(null);
+    setFastTimer(0);
+  };
+
+  const updateApp=()=>{
+    if(swRegistration&&swRegistration.waiting){
+      swRegistration.waiting.postMessage({type:'SKIP_WAITING'});
+      navigator.serviceWorker.addEventListener('controllerchange',()=>window.location.reload());
+    }
+  };
+
+  const insights=useMemo(()=>genInsights(fLog,wLog,l30,settings.dailyCalorieGoal,fastLog),[fLog,wLog,settings.dailyCalorieGoal,fastLog]);
 
   const card={background:'#ffffff',border:`1px solid ${T.border}`,borderRadius:16,padding:16,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'};
   const inp={background:'#ffffff',border:`1px solid ${T.border}`,borderRadius:10,padding:'11px 14px',color:T.text1,fontSize:15,fontFamily:T.font,outline:'none',width:'100%',boxSizing:'border-box'};
@@ -284,8 +419,17 @@ function App(){
 
   return e('div',{style:{fontFamily:T.font,background:T.bg,color:T.text1,minHeight:'100vh',maxWidth:500,margin:'0 auto',position:'relative',paddingBottom:80}},
 
+    // Update banner
+    showUpdate&&e('div',{style:{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:500,background:`linear-gradient(135deg, ${T.accent}, #059669)`,color:'#fff',padding:'12px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',zIndex:300,boxShadow:'0 2px 8px rgba(0,0,0,0.15)',animation:'slideDown 0.3s ease'}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('span',{style:{fontSize:18}},'🎉'),
+        e('span',{style:{fontSize:13,fontWeight:600}},'New version available!')
+      ),
+      e('button',{onClick:updateApp,style:{background:'rgba(255,255,255,0.25)',border:'1px solid rgba(255,255,255,0.4)',borderRadius:8,padding:'6px 14px',color:'#fff',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:T.font}},'Update')
+    ),
+
     // Header
-    e('div',{style:{padding:'18px 20px 10px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    e('div',{style:{padding:'18px 20px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:showUpdate?48:0}},
       e('div',null,
         e('div',{style:{fontSize:9,color:T.text3,fontFamily:T.mono,letterSpacing:2,textTransform:'uppercase'}},'calories · weight'),
         e('h1',{style:{margin:'2px 0 0',fontSize:22,fontWeight:700,letterSpacing:-0.5}},
@@ -457,6 +601,80 @@ function App(){
             });
           })()
         )
+      ),
+
+      // ═══ FAST ═══
+      tab==='fast'&&e('div',{style:{display:'flex',flexDirection:'column',gap:14,animation:'fadeIn 0.3s ease'}},
+        e('h2',{style:{margin:0,fontSize:17,fontWeight:600}},'Fast Tracker'),
+
+        // Active fast or start button
+        activeFast?e('div',{style:{...card,background:`linear-gradient(135deg, ${T.accentDim}, rgba(16,185,129,0.05))`,border:`1px solid ${T.accent}`,padding:24}},
+          e('div',{style:{textAlign:'center'}},
+            e('div',{style:{fontSize:10,color:T.accent,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'Fasting'),
+            e('div',{style:{fontSize:48,fontWeight:700,fontFamily:T.mono,color:T.accent,lineHeight:1}},formatFastDuration(fastTimer)),
+            e('div',{style:{fontSize:11,color:T.text3,marginTop:6,fontFamily:T.mono}},`Started ${new Date(activeFast.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`),
+            e('button',{onClick:stopFast,style:{...btnP,background:T.danger,marginTop:18}},'Stop Fast')
+          )
+        ):e('div',{style:card},
+          e('div',{style:{textAlign:'center',padding:'16px 0'}},
+            e('div',{style:{fontSize:32,marginBottom:8,opacity:0.3}},'⏱'),
+            e('div',{style:{fontSize:13,color:T.text3,marginBottom:16}},'No active fast'),
+            e('button',{onClick:startFast,style:btnP},'Start Fast')
+          )
+        ),
+
+        // Stats
+        (()=>{
+          const stats=getFastStats(fastLog);
+          if(stats.total===0)return null;
+          return e('div',{style:card},
+            e('div',{style:{fontSize:10,color:T.text3,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:12}},'Stats'),
+            e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}},
+              e('div',null,
+                e('div',{style:{fontSize:11,color:T.text3}},'Average'),
+                e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},stats.avg),
+                e('div',{style:{fontSize:10,color:T.text3}},'hours')
+              ),
+              e('div',null,
+                e('div',{style:{fontSize:11,color:T.text3}},'Longest'),
+                e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:'#d97706',marginTop:2}},stats.longest),
+                e('div',{style:{fontSize:10,color:T.text3}},'hours')
+              ),
+              e('div',null,
+                e('div',{style:{fontSize:11,color:T.text3}},'Total Fasts'),
+                e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,marginTop:2}},stats.total),
+                e('div',{style:{fontSize:10,color:T.text3}},'fasts')
+              ),
+              e('div',null,
+                e('div',{style:{fontSize:11,color:T.text3}},'Streak'),
+                e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:stats.streak>=3?T.accent:T.text2,marginTop:2}},stats.streak),
+                e('div',{style:{fontSize:10,color:T.text3}},'days')
+              )
+            )
+          );
+        })(),
+
+        // History
+        (()=>{
+          const entries=Object.entries(fastLog).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,30);
+          if(entries.length===0)return null;
+          return e('div',{style:card},
+            e('div',{style:{fontSize:10,color:T.text3,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:10}},'History'),
+            ...entries.flatMap(([d,fasts])=>
+              fasts.map((f,i)=>{
+                const st=new Date(f.start);
+                const et=new Date(f.end);
+                return e('div',{key:d+i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderTop:i>0||d!==entries[0][0]?`1px solid ${T.borderLight}`:'none'}},
+                  e('div',null,
+                    e('div',{style:{fontSize:12,color:T.text2}},fmt(d)),
+                    e('div',{style:{fontSize:10,color:T.text3,fontFamily:T.mono,marginTop:1}},`${st.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} → ${et.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`)
+                  ),
+                  e('div',{style:{fontSize:14,fontWeight:600,fontFamily:T.mono,color:parseFloat(f.duration)>=16?'#d97706':T.accent}},f.duration+'h')
+                );
+              })
+            )
+          );
+        })()
       )
     ),
 
@@ -507,8 +725,8 @@ function App(){
 
     // ═══ BOTTOM NAV ═══
     e('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:500,background:'rgba(246,245,241,0.92)',backdropFilter:'blur(24px)',borderTop:`1px solid ${T.border}`,display:'flex',justifyContent:'space-around',padding:'6px 0 max(6px, env(safe-area-inset-bottom))',zIndex:100}},
-      ...[{id:'today',l:'Today',ic:'◉'},{id:'log',l:'Log',ic:'☰'},{id:'weight',l:'Weight',ic:'◈'},{id:'insights',l:'Insights',ic:'◆'}].map(t=>
-        e('button',{key:t.id,onClick:()=>setTab(t.id),style:{background:'none',border:'none',padding:'6px 16px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,color:tab===t.id?T.accent:T.text3,transition:'color 0.2s',fontFamily:T.font}},
+      ...[{id:'today',l:'Today',ic:'◉'},{id:'log',l:'Log',ic:'☰'},{id:'weight',l:'Weight',ic:'◈'},{id:'fast',l:'Fast',ic:'⏱'},{id:'insights',l:'Insights',ic:'◆'}].map(t=>
+        e('button',{key:t.id,onClick:()=>setTab(t.id),style:{background:'none',border:'none',padding:'6px 12px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,color:tab===t.id?T.accent:T.text3,transition:'color 0.2s',fontFamily:T.font}},
           e('span',{style:{fontSize:18}},t.ic),
           e('span',{style:{fontSize:9,fontWeight:600,letterSpacing:0.5}},t.l)
         )

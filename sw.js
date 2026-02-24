@@ -1,14 +1,21 @@
-const CACHE_NAME = 'nutripulse-v1';
-const ASSETS = ['./index.html'];
+const CACHE_NAME = 'nutripulse-v3';
+const ASSETS = ['./index.html', './icon.svg', './icon-192.svg', './icon-512.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
-  self.skipWaiting();
+  // Don't skipWaiting automatically - let the client control it
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))));
   self.clients.claim();
+});
+
+// Listen for skip waiting message from client
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', e => {
