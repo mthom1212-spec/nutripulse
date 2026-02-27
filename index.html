@@ -405,7 +405,7 @@ function App(){
     if(!manualStartTime||!manualEndTime)return;
     const startDate=new Date(manualFastDate+'T'+manualStartTime);
     const endDate=new Date(manualFastDate+'T'+manualEndTime);
-    if(endDate<=startDate){alert('End time must be after start time');return}
+    if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
     const duration=calculateFastDuration(startDate.getTime(),endDate.getTime());
     const entry={start:startDate.getTime(),end:endDate.getTime(),duration};
     setFastLog(p=>({...p,[manualFastDate]:[...(p[manualFastDate]||[]),entry]}));
@@ -804,14 +804,13 @@ function App(){
         manualStartTime&&manualEndTime&&(()=>{
           const s=new Date(manualFastDate+'T'+manualStartTime);
           const en=new Date(manualFastDate+'T'+manualEndTime);
-          if(en>s){
-            const dur=calculateFastDuration(s.getTime(),en.getTime());
-            return e('div',{style:{padding:12,background:T.accentDim,borderRadius:10,textAlign:'center'}},
-              e('div',{style:{fontSize:11,color:T.text3}},'Duration'),
-              e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},dur+'h')
-            );
-          }
-          return null;
+          if(en<=s)en.setDate(en.getDate()+1);
+          const dur=calculateFastDuration(s.getTime(),en.getTime());
+          const overnight=en.getDate()!==s.getDate();
+          return e('div',{style:{padding:12,background:T.accentDim,borderRadius:10,textAlign:'center'}},
+            e('div',{style:{fontSize:11,color:T.text3}},overnight?'Duration (overnight)':'Duration'),
+            e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},dur+'h')
+          );
         })(),
         e('button',{onClick:addManualFast,style:{...btnP,opacity:manualStartTime&&manualEndTime?1:0.35},disabled:!manualStartTime||!manualEndTime},'Add Fast')
       )
