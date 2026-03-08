@@ -335,6 +335,10 @@ function App(){
   const[manualFastDate,setManualFastDate]=useState(today());
   const[manualStartTime,setManualStartTime]=useState('');
   const[manualEndTime,setManualEndTime]=useState('');
+  const[editFast,setEditFast]=useState(null); // {date,index,start,end}
+  const[editFastStart,setEditFastStart]=useState('');
+  const[editFastEnd,setEditFastEnd]=useState('');
+  const[editFastDate,setEditFastDate]=useState('');
 
   useEffect(()=>{DB.set(SK.food,fLog)},[fLog]);
   useEffect(()=>{DB.set(SK.weight,wLog)},[wLog]);
@@ -411,6 +415,48 @@ function App(){
     const entry={start:startDate.getTime(),end:endDate.getTime(),duration};
     setFastLog(p=>({...p,[manualFastDate]:[...(p[manualFastDate]||[]),entry]}));
     setManualStartTime('');setManualEndTime('');setShowManualFast(false);
+  };
+
+  const deleteFast=(date,index)=>{
+    setFastLog(p=>{
+      const updated={...p};
+      const arr=[...(updated[date]||[])];
+      arr.splice(index,1);
+      if(arr.length===0)delete updated[date];
+      else updated[date]=arr;
+      return updated;
+    });
+  };
+
+  const openEditFast=(date,index)=>{
+    const f=fastLog[date][index];
+    const st=new Date(f.start);
+    const en=new Date(f.end);
+    setEditFast({date,index});
+    setEditFastDate(date);
+    setEditFastStart(st.toTimeString().slice(0,5));
+    setEditFastEnd(en.toTimeString().slice(0,5));
+  };
+
+  const saveEditFast=()=>{
+    if(!editFast||!editFastStart||!editFastEnd)return;
+    const startDate=new Date(editFastDate+'T'+editFastStart);
+    const endDate=new Date(editFastDate+'T'+editFastEnd);
+    if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
+    const duration=calculateFastDuration(startDate.getTime(),endDate.getTime());
+    const entry={start:startDate.getTime(),end:endDate.getTime(),duration};
+    setFastLog(p=>{
+      const updated={...p};
+      // Remove from old date
+      const oldArr=[...(updated[editFast.date]||[])];
+      oldArr.splice(editFast.index,1);
+      if(oldArr.length===0)delete updated[editFast.date];
+      else updated[editFast.date]=oldArr;
+      // Add to new date
+      updated[editFastDate]=[...(updated[editFastDate]||[]),entry];
+      return updated;
+    });
+    setEditFast(null);
   };
 
   const exportData=()=>{
@@ -722,11 +768,15 @@ function App(){
                 const st=new Date(f.start);
                 const et=new Date(f.end);
                 return e('div',{key:d+i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderTop:i>0||d!==entries[0][0]?`1px solid ${T.borderLight}`:'none'}},
-                  e('div',null,
+                  e('div',{style:{flex:1}},
                     e('div',{style:{fontSize:12,color:T.text2}},fmt(d)),
                     e('div',{style:{fontSize:10,color:T.text3,fontFamily:T.mono,marginTop:1}},`${st.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} → ${et.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`)
                   ),
-                  e('div',{style:{fontSize:14,fontWeight:600,fontFamily:T.mono,color:parseFloat(f.duration)>=16?'#d97706':T.accent}},f.duration+'h')
+                  e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+                    e('div',{style:{fontSize:14,fontWeight:600,fontFamily:T.mono,color:parseFloat(f.duration)>=16?'#d97706':T.accent}},f.duration+'h'),
+                    e('button',{onClick:()=>openEditFast(d,i),style:{background:'rgba(0,0,0,0.04)',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:12,color:T.text3,display:'flex',alignItems:'center',justifyContent:'center'}},'✎'),
+                    e('button',{onClick:()=>{if(confirm('Delete this fast?'))deleteFast(d,i)},style:{background:T.dangerDim,border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:12,color:T.danger,display:'flex',alignItems:'center',justifyContent:'center'}},'✕')
+                  )
                 );
               })
             )
@@ -815,6 +865,38 @@ function App(){
           );
         })(),
         e('button',{onClick:addManualFast,style:{...btnP,opacity:manualStartTime&&manualEndTime?1:0.35},disabled:!manualStartTime||!manualEndTime},'Add Fast')
+      )
+    ),
+
+    editFast&&e(Modal,{title:'Edit Fast',onClose:()=>setEditFast(null)},
+      e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+        e('div',null,
+          e('div',{style:{fontSize:11,color:T.text3,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'Date'),
+          e('input',{type:'date',value:editFastDate,onChange:ev=>setEditFastDate(ev.target.value),style:inp})
+        ),
+        e('div',null,
+          e('div',{style:{fontSize:11,color:T.text3,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'Start Time'),
+          e('input',{type:'time',value:editFastStart,onChange:ev=>setEditFastStart(ev.target.value),style:inp})
+        ),
+        e('div',null,
+          e('div',{style:{fontSize:11,color:T.text3,fontFamily:T.mono,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'End Time'),
+          e('input',{type:'time',value:editFastEnd,onChange:ev=>setEditFastEnd(ev.target.value),style:inp})
+        ),
+        editFastStart&&editFastEnd&&(()=>{
+          const s=new Date(editFastDate+'T'+editFastStart);
+          const en=new Date(editFastDate+'T'+editFastEnd);
+          if(en<=s)en.setDate(en.getDate()+1);
+          const overnight=new Date(editFastDate+'T'+editFastEnd)<=s;
+          const dur=calculateFastDuration(s.getTime(),en.getTime());
+          return e('div',{style:{padding:12,background:T.accentDim,borderRadius:10,textAlign:'center'}},
+            e('div',{style:{fontSize:11,color:T.text3}},overnight?'Duration (overnight)':'Duration'),
+            e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},dur+'h')
+          );
+        })(),
+        e('div',{style:{display:'flex',gap:8}},
+          e('button',{onClick:()=>{if(confirm('Delete this fast?')){deleteFast(editFast.date,editFast.index);setEditFast(null)}},style:{...btnG,flex:1,borderColor:'rgba(239,68,68,0.25)',color:T.danger}},'Delete'),
+          e('button',{onClick:saveEditFast,style:{...btnP,flex:1,opacity:editFastStart&&editFastEnd?1:0.35},disabled:!editFastStart||!editFastEnd},'Save')
+        )
       )
     ),
 
