@@ -8,8 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="NutriPulse">
 <meta name="theme-color" content="#10b981">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="./icon.svg">
-<link rel="icon" type="image/svg+xml" href="./icon.svg">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
 <title>NutriPulse</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -405,7 +405,8 @@ function App(){
     if(!manualStartTime||!manualEndTime)return;
     const startDate=new Date(manualFastDate+'T'+manualStartTime);
     const endDate=new Date(manualFastDate+'T'+manualEndTime);
-    if(endDate<=startDate){alert('End time must be after start time');return}
+    // Handle overnight fasts: if end is before/equal start, roll end to next day
+    if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
     const duration=calculateFastDuration(startDate.getTime(),endDate.getTime());
     const entry={start:startDate.getTime(),end:endDate.getTime(),duration};
     setFastLog(p=>({...p,[manualFastDate]:[...(p[manualFastDate]||[]),entry]}));
@@ -804,14 +805,14 @@ function App(){
         manualStartTime&&manualEndTime&&(()=>{
           const s=new Date(manualFastDate+'T'+manualStartTime);
           const en=new Date(manualFastDate+'T'+manualEndTime);
-          if(en>s){
-            const dur=calculateFastDuration(s.getTime(),en.getTime());
-            return e('div',{style:{padding:12,background:T.accentDim,borderRadius:10,textAlign:'center'}},
-              e('div',{style:{fontSize:11,color:T.text3}},'Duration'),
-              e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},dur+'h')
-            );
-          }
-          return null;
+          // Handle overnight: if end <= start, roll end to next day
+          if(en<=s)en.setDate(en.getDate()+1);
+          const overnight=new Date(manualFastDate+'T'+manualEndTime)<=s;
+          const dur=calculateFastDuration(s.getTime(),en.getTime());
+          return e('div',{style:{padding:12,background:T.accentDim,borderRadius:10,textAlign:'center'}},
+            e('div',{style:{fontSize:11,color:T.text3}},overnight?'Duration (overnight)':'Duration'),
+            e('div',{style:{fontSize:24,fontWeight:700,fontFamily:T.mono,color:T.accent,marginTop:2}},dur+'h')
+          );
         })(),
         e('button',{onClick:addManualFast,style:{...btnP,opacity:manualStartTime&&manualEndTime?1:0.35},disabled:!manualStartTime||!manualEndTime},'Add Fast')
       )

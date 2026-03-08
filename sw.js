@@ -1,5 +1,5 @@
-const CACHE_NAME = 'nutripulse-v5';
-const ASSETS = ['./index.html', './icon.svg', './icon-192.svg', './icon-512.svg'];
+const CACHE_NAME = 'nutripulse-v6';
+const ASSETS = ['./index.html', './icon-192.png', './icon-512.png', './manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
